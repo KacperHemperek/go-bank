@@ -2,7 +2,7 @@ package main
 
 import (
 	"database/sql"
-	"errors"
+	"fmt"
 	_ "github.com/lib/pq"
 	"math/rand/v2"
 )
@@ -43,55 +43,40 @@ func (s *PostgresStorage) createAccountTable() error {
 }
 
 func (s *PostgresStorage) GetAccountByID(id int) (*Account, error) {
-	query := `
-			SELECT id, first_name, last_name, number, balance, create_at, updated_at
-			FROM accounts
-			WHERE id = $1;
-			`
+	query := `SELECT * FROM accounts WHERE id = $1;`
 
-	row := s.db.QueryRow(query, id)
-
-	account := &Account{}
-
-	err := row.Scan(
-		&account.ID,
-		&account.FirstName,
-		&account.LastName,
-		&account.Number,
-		&account.Balance,
-		&account.CreateAt,
-		&account.UpdateAt,
-	)
+	rows, err := s.db.Query(query, id)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ApiError{Err: "Account not found", Status: 404, Cause: err}
-		}
-
 		return nil, err
 	}
 
-	return account, nil
+	for rows.Next() {
+		return scanIntoAccount(rows)
+	}
+
+	return nil, fmt.Errorf("account %d not found", id)
 }
 
 func (s *PostgresStorage) GetAccounts() ([]*Account, error) {
-	query := `SELECT id, first_name, last_name, number, balance, create_at, updated_at FROM accounts`
+	query := `SELECT * FROM accounts`
 
 	rows, err := s.db.Query(query)
 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	accounts := make([]*Account, 0)
 
 	for rows.Next() {
-		account := &Account{}
-		if err := rows.Scan(&account.ID, &account.FirstName, &account.LastName, &account.Number, &account.Balance, &account.CreateAt, &account.UpdateAt); err != nil {
+
+		acc, err := scanIntoAccount(rows)
+
+		if err != nil {
 			return nil, err
 		}
-		accounts = append(accounts, account)
+		accounts = append(accounts, acc)
 	}
 	return accounts, nil
 }
@@ -101,30 +86,34 @@ func (s *PostgresStorage) CreateAccount(account *Account) (*Account, error) {
 	query := `
 			INSERT INTO accounts (first_name, last_name, number, balance)
 			VALUES ($1, $2, $3, 0)
-			RETURNING id, first_name, last_name, number, balance, create_at, updated_at;
+			RETURNING *;
 		`
 
 	rows, err := s.db.Query(query, account.FirstName, account.LastName, int64(rand.IntN(1000000)))
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	result := &Account{}
-
 	for rows.Next() {
-		if err := rows.Scan(&result.ID, &result.FirstName, &result.LastName, &result.Number, &result.Balance, &result.CreateAt, &result.UpdateAt); err != nil {
-			return nil, err
-		}
+		return scanIntoAccount(rows)
 	}
-	return result, nil
+
+	return nil, fmt.Errorf("could not create account")
 }
 
 func (s *PostgresStorage) DeleteAccount(id int) error {
+	query := `DELETE FROM accounts WHERE id = $1;`
+
+	_, err := s.db.Query(query, id)
+
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (s *PostgresStorage) Transfer(from, to int, amount int64) error {
+
 	return nil
 }
 
@@ -141,4 +130,13 @@ func NewPostgresStorage() (*PostgresStorage, error) {
 	}
 
 	return &PostgresStorage{db: db}, nil
+}
+
+func scanIntoAccount(rows *sql.Rows) (*Account, error) {
+	a := &Account{}
+
+	if err := rows.Scan(&a.ID, &a.FirstName, &a.LastName, &a.Number, &a.Balance, &a.CreateAt, &a.UpdateAt); err != nil {
+		return nil, err
+	}
+	return a, nil
 }

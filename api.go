@@ -26,6 +26,8 @@ func (s *APIServer) Run() {
 
 	router.HandleFunc("/accounts/{id}", HandleFunc(s.HandleAccount))
 
+	router.HandleFunc("/transfer", HandleFunc(s.handleTransfer))
+
 	log.Fatal(http.ListenAndServe(s.addr, router))
 }
 
@@ -35,9 +37,6 @@ func (s *APIServer) handleAccounts(w http.ResponseWriter, r *http.Request) error
 	}
 	if r.Method == http.MethodPost {
 		return s.handleCreateAccount(w, r)
-	}
-	if r.Method == http.MethodDelete {
-		return s.handleDeleteAccount(w, r)
 	}
 
 	return ApiError{
@@ -80,13 +79,12 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 	return WriteJson(w, http.StatusCreated, result)
 }
 
-func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
-	return nil
-}
-
 func (s *APIServer) HandleAccount(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == http.MethodGet {
 		return s.handleGetAccount(w, r)
+	}
+	if r.Method == http.MethodDelete {
+		return s.handleDeleteAccount(w, r)
 	}
 
 	return ApiError{
@@ -97,31 +95,54 @@ func (s *APIServer) HandleAccount(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) error {
-	vars := mux.Vars(r)
-	id, ok := vars["id"]
-
-	if !ok {
-		return ApiError{Err: "ID is required", Status: http.StatusBadRequest}
-	}
-
-	idNum, err := strconv.Atoi(id)
-
-	if err != nil {
-		return ApiError{Err: "ID must be a number", Status: http.StatusBadRequest, Cause: err}
-	}
-
-	acc, err := s.store.GetAccountByID(idNum)
+	id, err := getId(r)
 
 	if err != nil {
 		return err
 	}
 
-	return WriteJson(w, http.StatusOK, acc)
+	acc, err := s.store.GetAccountByID(id)
 
+	if err != nil {
+		return ApiError{Err: "Account not found", Status: http.StatusNotFound, Cause: err}
+	}
+
+	return WriteJson(w, http.StatusOK, acc)
+}
+
+func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
+	id, err := getId(r)
+
+	if err != nil {
+		return err
+	}
+
+	err = s.store.DeleteAccount(id)
+	if err != nil {
+		return ApiError{Err: "Could not delete account", Status: http.StatusInternalServerError, Cause: err}
+	}
+
+	return WriteJson(w, http.StatusOK, ResObj{"status": "deleted"})
 }
 
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
-	return nil
+
+	if r.Method != http.MethodPost {
+		return ApiError{Err: "Method not allowed", Status: http.StatusMethodNotAllowed}
+	}
+
+	transferReq := &TransferRequest{}
+	defer r.Body.Close()
+
+	if err := DecodeJson(r, transferReq); err != nil {
+		return ApiError{Err: "Could not decode request", Status: http.StatusBadRequest, Cause: err}
+	}
+
+	if err := s.validate.Struct(transferReq); err != nil {
+		return ApiError{Err: "Invalid request", Status: http.StatusBadRequest, Cause: err}
+	}
+
+	return WriteJson(w, http.StatusOK, ResObj{"status": "transferred successfully"})
 }
 
 func WriteJson(w http.ResponseWriter, status int, v any) error {
@@ -148,7 +169,6 @@ func (e ApiError) Error() string {
 
 func NewAPIServer(addr string, store Storage) *APIServer {
 	validate := validator.New(validator.WithRequiredStructEnabled())
-
 	return &APIServer{
 		addr:     addr,
 		store:    store,
@@ -172,6 +192,16 @@ func HandleFunc(f apiFunc) http.HandlerFunc {
 		}
 		fmt.Printf("Success [%s]: %s %s\n", r.Method, r.URL, time.Since(now))
 	}
+}
+
+func getId(r *http.Request) (int, error) {
+	idStr := mux.Vars(r)["id"]
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return id, ApiError{Err: "ID must be a number", Status: http.StatusBadRequest, Cause: err}
+	}
+	return id, nil
 }
 
 type ResObj map[string]interface{}

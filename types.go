@@ -4,6 +4,12 @@ type AccountCreateRequest struct {
 	FirstName string `json:"firstName" validate:"required,min=2,max=40"`
 	LastName  string `json:"lastName" validate:"required,min=2,max=40"`
 }
+
+type TransferRequest struct {
+	Receiver int `json:"receiver" validate:"required"`
+	Amount   int `json:"amount" validate:"required"`
+}
+
 type Account struct {
 	ID        int    `json:"id"`
 	FirstName string `json:"firstName"`
