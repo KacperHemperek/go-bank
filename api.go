@@ -7,6 +7,7 @@ import (
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -21,14 +22,16 @@ func (s *APIServer) Run() {
 
 	log.Println("Server is listening on: ", s.addr)
 
-	router.HandleFunc("/account", HandleFunc(s.handleAccount))
+	router.HandleFunc("/accounts", HandleFunc(s.handleAccounts))
+
+	router.HandleFunc("/accounts/{id}", HandleFunc(s.HandleAccount))
 
 	log.Fatal(http.ListenAndServe(s.addr, router))
 }
 
-func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error {
+func (s *APIServer) handleAccounts(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == http.MethodGet {
-		return s.handleGetAccount(w, r)
+		return s.handleGetAccounts(w, r)
 	}
 	if r.Method == http.MethodPost {
 		return s.handleCreateAccount(w, r)
@@ -43,10 +46,18 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error 
 	}
 }
 
-func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) error {
-	account := NewAccount("Kacper", "Hemp")
+func (s *APIServer) handleGetAccounts(w http.ResponseWriter, _ *http.Request) error {
+	accounts, err := s.store.GetAccounts()
 
-	return WriteJson(w, http.StatusOK, account)
+	if err != nil {
+		return ApiError{Err: "Could not get accounts", Status: http.StatusInternalServerError, Cause: err}
+	}
+
+	response := ResObj{
+		"accounts": accounts,
+	}
+
+	return WriteJson(w, http.StatusOK, response)
 }
 
 func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) error {
@@ -71,6 +82,42 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 
 func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
 	return nil
+}
+
+func (s *APIServer) HandleAccount(w http.ResponseWriter, r *http.Request) error {
+	if r.Method == http.MethodGet {
+		return s.handleGetAccount(w, r)
+	}
+
+	return ApiError{
+		Err:    "Method not allowed",
+		Status: http.StatusMethodNotAllowed,
+	}
+
+}
+
+func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) error {
+	vars := mux.Vars(r)
+	id, ok := vars["id"]
+
+	if !ok {
+		return ApiError{Err: "ID is required", Status: http.StatusBadRequest}
+	}
+
+	idNum, err := strconv.Atoi(id)
+
+	if err != nil {
+		return ApiError{Err: "ID must be a number", Status: http.StatusBadRequest, Cause: err}
+	}
+
+	acc, err := s.store.GetAccountByID(idNum)
+
+	if err != nil {
+		return ApiError{Err: "Could not get account", Status: http.StatusInternalServerError, Cause: err}
+	}
+
+	return WriteJson(w, http.StatusOK, acc)
+
 }
 
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
@@ -126,3 +173,5 @@ func HandleFunc(f apiFunc) http.HandlerFunc {
 		fmt.Printf("Success [%s]: %s %s\n", r.Method, r.URL, time.Since(now))
 	}
 }
+
+type ResObj map[string]interface{}

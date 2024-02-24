@@ -9,6 +9,7 @@ import (
 type Storage interface {
 	GetAccountByID(id int) (*Account, error)
 	CreateAccount(account *Account) (*Account, error)
+	GetAccounts() ([]*Account, error)
 	DeleteAccount(id int) error
 	Transfer(from, to int, amount int64) error
 }
@@ -41,8 +42,45 @@ func (s *PostgresStorage) createAccountTable() error {
 }
 
 func (s *PostgresStorage) GetAccountByID(id int) (*Account, error) {
-	return nil, nil
+	query := `
+			SELECT id, first_name, last_name, number, balance, create_at, updated_at
+			FROM accounts
+			WHERE id = $1;
+			`
 
+	row := s.db.QueryRow(query, id)
+
+	account := &Account{}
+
+	err := row.Scan(&account.ID, &account.FirstName, &account.LastName, &account.Number, &account.Balance, &account.CreateAt, &account.UpdateAt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return account, nil
+}
+
+func (s *PostgresStorage) GetAccounts() ([]*Account, error) {
+	query := `SELECT id, first_name, last_name, number, balance, create_at, updated_at FROM accounts`
+
+	rows, err := s.db.Query(query)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	accounts := make([]*Account, 0)
+
+	for rows.Next() {
+		account := &Account{}
+		if err := rows.Scan(&account.ID, &account.FirstName, &account.LastName, &account.Number, &account.Balance, &account.CreateAt, &account.UpdateAt); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, account)
+	}
+	return accounts, nil
 }
 
 func (s *PostgresStorage) CreateAccount(account *Account) (*Account, error) {
