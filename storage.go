@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	_ "github.com/lib/pq"
 	"math/rand/v2"
 )
@@ -52,9 +53,21 @@ func (s *PostgresStorage) GetAccountByID(id int) (*Account, error) {
 
 	account := &Account{}
 
-	err := row.Scan(&account.ID, &account.FirstName, &account.LastName, &account.Number, &account.Balance, &account.CreateAt, &account.UpdateAt)
+	err := row.Scan(
+		&account.ID,
+		&account.FirstName,
+		&account.LastName,
+		&account.Number,
+		&account.Balance,
+		&account.CreateAt,
+		&account.UpdateAt,
+	)
 
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ApiError{Err: "Account not found", Status: 404, Cause: err}
+		}
+
 		return nil, err
 	}
 

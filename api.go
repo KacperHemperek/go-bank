@@ -113,7 +113,7 @@ func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) err
 	acc, err := s.store.GetAccountByID(idNum)
 
 	if err != nil {
-		return ApiError{Err: "Could not get account", Status: http.StatusInternalServerError, Cause: err}
+		return err
 	}
 
 	return WriteJson(w, http.StatusOK, acc)
